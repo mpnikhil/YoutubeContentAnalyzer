@@ -53,9 +53,19 @@ class YouTubeAnalyzer {
 
     try {
       const summary = await this.generateSummary(fullText, `
-        Provide a comprehensive summary of this YouTube video transcript.
-        Break down the main topics, key points, and important takeaways.
-        Structure the summary in a clear and readable format.
+        Analyze this YouTube video for its actual information density value. Do NOT provide a general summary.
+
+        We need to determine:
+        - How much genuine, useful information does this video contain vs fluff content?
+        - Is it padded with hype, exaggerated claims, or unnecessary dramatization?
+        - Time wasted on influencer elements (like/subscribe, merch promotion, etc.)
+        - Presence of sponsored content or product placement
+        - Whether the actual content could have been delivered more efficiently
+        - Specific timestamps where content is low-value or skippable
+
+        Focus purely on evaluating whether this video respects viewer time by delivering solid information density or wastes it with padding and marketing.
+
+        Be direct and specific. Keep response under 500 words.
       `);
 
       return {
@@ -76,8 +86,8 @@ class YouTubeAnalyzer {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'phi4',
-          prompt: `${prompt}\n\nText to summarize:\n${text}`,
+          model: 'phi4-16k',
+          prompt: `${prompt}\n\nYoutube video transcript:\n${text}`,
           options: {
             temperature: 0.7,
             num_predict: 1024
@@ -505,7 +515,7 @@ class YouTubeAnalyzer {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'phi4',
+        model: 'phi4-16k',
         prompt: `Analyze this YouTube video comprehensively but write a very concise summary. Keep your final analysis under 500 characters total:
   
   Title: ${videoData.title}
@@ -522,7 +532,7 @@ class YouTubeAnalyzer {
   Keep your response under 500 characters.`,
         options: {
           temperature: 0.7,
-          num_predict: 512
+          num_predict: 1024
         }
       })
     });
@@ -530,7 +540,7 @@ class YouTubeAnalyzer {
     const analysisResponse = await initialAnalysis.text();
     console.log('Initial Analysis:', analysisResponse);
 
-    // Step 2: Convert to structured format using llama3.3
+    // Step 2: Convert to structured format using phi4 again, could use other models like llama3.3 as well
     try {
       // Fetch the structured analysis from the model
       const structuredAnalysis = await fetch(`${this.baseUrl}/api/generate`, {
@@ -539,20 +549,22 @@ class YouTubeAnalyzer {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama3.3',
-          prompt: `<s>[INST]Convert this video analysis to JSON format. Output ONLY the JSON object, no other text:
-        
-        Analysis: ${analysisResponse}
-        
-        Required JSON structure:
-        {
-          "clickbaitScore": (number between 0-100),
-          "contentValue": (string, one of: "low", "medium", "high"),
-          "fluffPercentage": (number between 0-100),
-          "keyIssues": (array of strings),
-          "skipSections": (array of objects with format {"time": "MM:SS", "reason": "string"}),
-          "verdict": (string summary)
-        }[/INST]</s>`,
+          model: 'phi4',
+          prompt: `You are a helpful JSON converter. Take this video analysis and convert it to structured JSON data.
+
+          Analysis to convert: ${analysisResponse}
+          
+          Rules:
+          1. Return ONLY valid JSON - no other text
+          2. Use this exact structure:
+          {
+            "clickbaitScore": (0-100 number showing how clickbaity the title is),
+            "contentValue": ("low", "medium", or "high"),
+            "fluffPercentage": (0-100 number showing % of filler content),
+            "keyIssues": [array of main problems found],
+            "skipSections": [{"time": "MM:SS", "reason": "why skip this part"}],
+            "verdict": "brief overall assessment"
+          }`,
           format: "json",
           options: {
             temperature: 0.1,
